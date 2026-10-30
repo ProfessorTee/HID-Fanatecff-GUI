@@ -1,28 +1,30 @@
 # HID-Fanatecff-GUI (Fanatec Tuning)
 
-**Grafische Oberfläche für das Tuning-Menü von Fanatec-Wheelbases unter Linux**, aufbauend auf dem
-Kerneltreiber [hid-fanatecff](https://github.com/gotzl/hid-fanatecff). Lenkwinkel, Force Feedback,
-Dämpfung, Glättung usw. lassen sich per Schieberegler einstellen. Dazu kommen Profile, die beim Start
-eines Spiels automatisch geladen werden.
+**English** · [Deutsch](README.de.md)
 
-## Funktionen
+**Graphical interface for the tuning menu of Fanatec wheel bases on Linux**, built on the kernel driver
+[hid-fanatecff](https://github.com/gotzl/hid-fanatecff). Steering angle, force feedback, damping, smoothing
+etc. can be set with sliders, plus profiles that are loaded automatically when a game starts.
 
-- **Alle Tuning-Werte** der Base (SEN, FF, FFS, FUL, FEI, FOR, SPR, DPR, SHO, NDP, NFR, NIN, INT, Slot, …)
-  mit verständlichen Namen und Empfehlungen. Änderungen landen sofort im aktuellen Slot der Base.
-- **Profile** speichern und laden. Mitgeliefert: *Empfohlen*, *GT*, *Rally*, *Drift*.
-- **Automatische Spielerkennung:** Ein Hintergrunddienst erkennt laufende Spiele (auch unter Proton) an
-  ihrer `.exe` und setzt das zugeordnete Profil. Nach Spielende optional ein anderes Profil.
-- **Profilwechsel im Spiel** per Tastenkürzel auf `fanatec-tuning --next`.
-- **Desktop-App** mit PySide6, ohne PySide6 automatisch als **Browser-Oberfläche** (nur auf `127.0.0.1`).
+The interface is in German.
+
+## Features
+
+- **All tuning values** of the base (SEN, FF, FFS, FUL, FEI, FOR, SPR, DPR, SHO, NDP, NFR, NIN, INT, slot, …)
+  with readable names and recommendations. Changes go straight into the base's current slot.
+- **Profiles** to save and load. Included: *Empfohlen* (recommended), *GT*, *Rally*, *Drift*.
+- **Automatic game detection:** a background service detects running games (also under Proton) by their
+  `.exe` and applies the assigned profile. Optionally a different profile after the game exits.
+- **Switch profiles in game** with a keyboard shortcut bound to `fanatec-tuning --next`.
+- **Desktop app** with PySide6; without PySide6 it falls back to a **browser interface** (only on `127.0.0.1`).
 
 ## Installation
 
-**Ein Klick:** `Fanatec-Tuning.desktop` herunterladen und doppelklicken (bei KDE ggf. erst
-„Ausführen erlauben“). Die Datei enthält das komplette Programm, installiert es nach `~/.local/bin`,
-legt Startmenü-Eintrag und Autostart an und startet es. Ein neuerer Starter aktualisiert die Installation
-beim nächsten Doppelklick.
+**One click:** download `Fanatec-Tuning.desktop` and double-click it (on KDE you may have to "allow
+executing" first). The file contains the whole program, installs it to `~/.local/bin`, adds a start menu
+entry and autostart, and launches it. A newer launcher updates the installation on the next double-click.
 
-**Oder per Terminal:**
+**Or via terminal:**
 
 ```
 git clone https://github.com/ProfessorTee/HID-Fanatecff-GUI.git
@@ -30,39 +32,39 @@ cd HID-Fanatecff-GUI
 ./fanatec-tuning --install
 ```
 
-**Schreibrechte (einmalig):** Damit normale Benutzer die Werte ändern dürfen, eine udev-Regel anlegen und
-danach die Base aus- und wieder einschalten:
+**Write permissions (once):** so normal users may change the values, add a udev rule and then switch the
+base off and on again:
 
 ```
 sudo ~/.local/bin/fanatec-tuning --udev
 ```
 
-Entfernen: `fanatec-tuning --uninstall` (Profile in `~/.config/fanatec-tuning` bleiben erhalten).
+Remove: `fanatec-tuning --uninstall` (profiles in `~/.config/fanatec-tuning` are kept).
 
-## Befehle
+## Commands
 
-| Befehl | Wirkung |
+| Command | Effect |
 |---|---|
-| `fanatec-tuning` | Desktop-App öffnen |
-| `fanatec-tuning --web` | Oberfläche im Browser öffnen |
-| `fanatec-tuning --daemon` | nur Spielerkennung im Hintergrund (Autostart) |
-| `fanatec-tuning --next` | nächstes Profil des laufenden Spiels |
-| `fanatec-tuning --apply NAME` | Profil NAME setzen |
-| `fanatec-tuning --install` / `--uninstall` | installieren / entfernen |
-| `sudo fanatec-tuning --udev` | Schreibrechte einrichten |
+| `fanatec-tuning` | open the desktop app |
+| `fanatec-tuning --web` | open the interface in the browser |
+| `fanatec-tuning --daemon` | only game detection in the background (autostart) |
+| `fanatec-tuning --next` | next profile of the running game |
+| `fanatec-tuning --apply NAME` | apply profile NAME |
+| `fanatec-tuning --install` / `--uninstall` | install / remove |
+| `sudo fanatec-tuning --udev` | set up write permissions |
 
-## Voraussetzungen
+## Requirements
 
-- Linux mit dem Treiber [hid-fanatecff](https://github.com/gotzl/hid-fanatecff) (stellt
-  `/sys/class/ftec_tuning/` bereit)
-- Python 3, für die Desktop-App zusätzlich PySide6 (Arch/CachyOS: `sudo pacman -S pyside6`)
-- Entwickelt und getestet mit einer Fanatec CSL DD (Boost Kit) unter KDE Plasma 6 (CachyOS)
+- Linux with the driver [hid-fanatecff](https://github.com/gotzl/hid-fanatecff) (provides
+  `/sys/class/ftec_tuning/`)
+- Python 3, plus PySide6 for the desktop app (Arch/CachyOS: `sudo pacman -S pyside6`)
+- Developed and tested with a Fanatec CSL DD (Boost Kit) on KDE Plasma 6 (CachyOS)
 
-## Entwicklung
+## Development
 
-Das Programm ist die eine Datei `fanatec-tuning`. Nach Änderungen `./make-desktop.sh` ausführen, damit
-der Ein-Klick-Starter das neue Programm enthält.
+The program is the single file `fanatec-tuning`. After changes, run `./make-desktop.sh` so the one-click
+launcher contains the new program.
 
-## Lizenz
+## License
 
-MIT. hid-fanatecff ist ein eigenes Projekt (gotzl) und nicht Teil dieses Repos.
+MIT. hid-fanatecff is a separate project (gotzl) and not part of this repo.
