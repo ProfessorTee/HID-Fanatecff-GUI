@@ -7,6 +7,8 @@ Kerneltreiber [hid-fanatecff](https://github.com/gotzl/hid-fanatecff). Lenkwinke
 Dämpfung, Glättung usw. lassen sich per Schieberegler einstellen. Dazu kommen Profile, die beim Start
 eines Spiels automatisch geladen werden.
 
+Die Oberfläche folgt der Systemsprache: Deutsch auf deutschen Systemen, sonst Englisch.
+
 ## Funktionen
 
 - **Alle Tuning-Werte** der Base (SEN, FF, FFS, FUL, FEI, FOR, SPR, DPR, SHO, NDP, NFR, NIN, INT, Slot, …)

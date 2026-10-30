@@ -31,6 +31,23 @@ import urllib.request
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+HELP_EN = """Fanatec Tuning – desktop app for the hid-fanatecff driver with automatic per-game profiles.
+
+Reads and writes the values under /sys/class/ftec_tuning/<device>/.
+Needs only Python; the desktop app also needs PySide6 (sudo pacman -S pyside6),
+without PySide6 the browser version opens.
+
+  fanatec-tuning                 open the desktop app. Started from elsewhere (e.g. by
+                                 double-clicking it in Downloads) it installs or updates itself.
+  fanatec-tuning --web           open the interface in the browser instead
+  fanatec-tuning --daemon        only run in the background (for autostart)
+  fanatec-tuning --next          next profile of the running game (for a keyboard shortcut)
+  fanatec-tuning --apply NAME    apply profile NAME
+  fanatec-tuning --install       install to ~/.local/bin + start menu + autostart
+  fanatec-tuning --launch        install/update if needed, then start
+  fanatec-tuning --uninstall     remove everything again (profiles are kept)
+  sudo fanatec-tuning --udev     set up write permissions (once)
+"""
 HOST, PORT = "127.0.0.1", 8765
 URL = f"http://{HOST}:{PORT}"
 CFG_DIR = os.path.expanduser("~/.config/fanatec-tuning")
@@ -48,31 +65,47 @@ UDEV_RULE = ('# Erlaubt normalen Benutzern, das Fanatec-Tuning-Menü (hid-fanate
              'RUN+="/bin/sh -c \'chmod 666 /sys%p/[A-Z]* /sys%p/advanced_mode\'"\n')
 POLL_SECONDS = 2
 
+# German UI on a German system, English otherwise.
+DE = (os.environ.get("LC_ALL") or os.environ.get("LC_MESSAGES") or os.environ.get("LANG") or "").startswith("de")
+
+
+def t(de, en):
+    return de if DE else en
+
+
+G_BASIC = t("Grundlagen", "Basics")
+G_EFFECTS = t("Effekte aus dem Spiel", "Effects from the game")
+G_NATURAL = t("Natürliches Gefühl", "Natural feel")
+G_EXPERT = t("Experte", "Expert")
+EXPERT_TITLE = t("Experte (nur ändern, wenn du weißt, was es tut)", "Expert (only change if you know what it does)")
+
 # key, Anzeigename, Beschreibung, min, max, Schritt, Gruppe, Typ
 PARAMS = [
-    ("SEN", "Lenkwinkel", "Maximaler Lenkeinschlag in Grad (90–2520)", 90, 2520, 10, "Grundlagen", "slider"),
-    ("FF", "Force Feedback", "Gibt die Kraft der Base ans Spiel frei (empfohlen: 100)", 0, 100, 1, "Grundlagen", "slider"),
-    ("FFS", "FF-Scaling", "PEAK: kurze Kraftspitzen voll ausgeben (empfohlen) · LINEAR: gleichmäßig", 0, 1, 1, "Grundlagen", "toggle"),
-    ("FUL", "Full Force (Boost Kit)", "An = volle 8 Nm mit Boost Kit · aus = Standard 5 Nm", 0, 100, 100, "Grundlagen", "toggle"),
-    ("FEI", "Effekt-Intensität", "Wie hart Effekte wie Curbs durchkommen (empfohlen: 100)", 0, 100, 10, "Effekte aus dem Spiel", "slider"),
-    ("FOR", "Kraft-Effekte", "Absolute Stärke der physikalischen Kräfte (empfohlen: 100)", 0, 120, 1, "Effekte aus dem Spiel", "slider"),
-    ("SPR", "Feder-Effekte", "Rückstellkraft – steuern Spiele meist selbst (empfohlen: 100)", 0, 120, 1, "Effekte aus dem Spiel", "slider"),
-    ("DPR", "Dämpfer-Effekte", "Dämpfung aus der Simulation (100, ggf. im Spiel reduzieren)", 0, 120, 1, "Effekte aus dem Spiel", "slider"),
-    ("SHO", "Vibration", "Vibrationsmotoren (z. B. im Lenkrad) an/aus", 0, 100, 100, "Effekte aus dem Spiel", "toggle"),
-    ("NDP", "Natürliche Dämpfung", "Verhindert Aufschaukeln/Oszillieren (Standard: 50, sportlich: 10–20)", 0, 100, 1, "Natürliches Gefühl", "slider"),
-    ("NFR", "Natürliche Reibung", "Mechanischer Widerstand – bei DD meist aus (0)", 0, 100, 1, "Natürliches Gefühl", "slider"),
-    ("NIN", "Natürliche Trägheit", "Simuliert Lenkradträgheit – meist aus (0)", 0, 100, 1, "Natürliches Gefühl", "slider"),
-    ("INT", "Glättung", "Filtert das Rohsignal, macht es weicher (Fanatec-Standard: 11, direkter: 1)", 0, 20, 1, "Natürliches Gefühl", "slider"),
-    ("SLOT", "Tuning-Slot", "Speicherplatz der Base (1-5)", 1, 5, 1, "Experte", "number"),
-    ("ACP", "ACP", "Vermutlich Modus der Analog-Paddles (AP)", 0, 10, 1, "Experte", "number"),
-    ("advanced_mode", "Advanced Mode", "Erweitertes Tuning-Menü", 0, 1, 1, "Experte", "number"),
+    ("SEN", t("Lenkwinkel", "Steering angle"), t("Maximaler Lenkeinschlag in Grad (90–2520)", "Maximum steering lock in degrees (90–2520)"), 90, 2520, 10, G_BASIC, "slider"),
+    ("FF", "Force Feedback", t("Gibt die Kraft der Base ans Spiel frei (empfohlen: 100)", "Share of the base's force the game may use (recommended: 100)"), 0, 100, 1, G_BASIC, "slider"),
+    ("FFS", "FF-Scaling", t("PEAK: kurze Kraftspitzen voll ausgeben (empfohlen) · LINEAR: gleichmäßig", "PEAK: pass short force peaks at full strength (recommended) · LINEAR: even"), 0, 1, 1, G_BASIC, "toggle"),
+    ("FUL", "Full Force (Boost Kit)", t("An = volle 8 Nm mit Boost Kit · aus = Standard 5 Nm", "On = full 8 Nm with Boost Kit · off = standard 5 Nm"), 0, 100, 100, G_BASIC, "toggle"),
+    ("FEI", t("Effekt-Intensität", "Effect intensity"), t("Wie hart Effekte wie Curbs durchkommen (empfohlen: 100)", "How hard effects like kerbs come through (recommended: 100)"), 0, 100, 10, G_EFFECTS, "slider"),
+    ("FOR", t("Kraft-Effekte", "Force effects"), t("Absolute Stärke der physikalischen Kräfte (empfohlen: 100)", "Absolute strength of the physical forces (recommended: 100)"), 0, 120, 1, G_EFFECTS, "slider"),
+    ("SPR", t("Feder-Effekte", "Spring effects"), t("Rückstellkraft – steuern Spiele meist selbst (empfohlen: 100)", "Centering force – usually controlled by the game (recommended: 100)"), 0, 120, 1, G_EFFECTS, "slider"),
+    ("DPR", t("Dämpfer-Effekte", "Damper effects"), t("Dämpfung aus der Simulation (100, ggf. im Spiel reduzieren)", "Damping from the simulation (100, reduce in game if needed)"), 0, 120, 1, G_EFFECTS, "slider"),
+    ("SHO", "Vibration", t("Vibrationsmotoren (z. B. im Lenkrad) an/aus", "Vibration motors (e.g. in the wheel) on/off"), 0, 100, 100, G_EFFECTS, "toggle"),
+    ("NDP", t("Natürliche Dämpfung", "Natural damping"), t("Verhindert Aufschaukeln/Oszillieren (Standard: 50, sportlich: 10–20)", "Prevents oscillation (default: 50, sporty: 10–20)"), 0, 100, 1, G_NATURAL, "slider"),
+    ("NFR", t("Natürliche Reibung", "Natural friction"), t("Mechanischer Widerstand – bei DD meist aus (0)", "Mechanical resistance – usually off on DD (0)"), 0, 100, 1, G_NATURAL, "slider"),
+    ("NIN", t("Natürliche Trägheit", "Natural inertia"), t("Simuliert Lenkradträgheit – meist aus (0)", "Simulates wheel inertia – usually off (0)"), 0, 100, 1, G_NATURAL, "slider"),
+    ("INT", t("Glättung", "Smoothing"), t("Filtert das Rohsignal, macht es weicher (Fanatec-Standard: 11, direkter: 1)", "Filters the raw signal, makes it softer (Fanatec default: 11, more direct: 1)"), 0, 20, 1, G_NATURAL, "slider"),
+    ("SLOT", "Tuning-Slot", t("Speicherplatz der Base (1-5)", "Memory slot of the base (1-5)"), 1, 5, 1, G_EXPERT, "number"),
+    ("ACP", "ACP", t("Vermutlich Modus der Analog-Paddles (AP)", "Probably the analog paddle mode (AP)"), 0, 10, 1, G_EXPERT, "number"),
+    ("advanced_mode", "Advanced Mode", t("Erweitertes Tuning-Menü", "Extended tuning menu"), 0, 1, 1, G_EXPERT, "number"),
 ]
-TOGGLE_LABELS = {"FFS": ("LINEAR", "PEAK"), "FUL": ("aus – 5 Nm", "an – 8 Nm"), "SHO": ("aus", "an")}
+TOGGLE_LABELS = {"FFS": ("LINEAR", "PEAK"), "FUL": (t("aus – 5 Nm", "off – 5 Nm"), t("an – 8 Nm", "on – 8 Nm")),
+                 "SHO": (t("aus", "off"), t("an", "on"))}
+OFF_ON = (t("aus", "off"), t("an", "on"))
 KEYS = {p[0] for p in PARAMS}
-PROFILE_KEYS = [p[0] for p in PARAMS if p[6] != "Experte"]
+PROFILE_KEYS = [p[0] for p in PARAMS if p[6] != G_EXPERT]
 
 DEFAULT_PROFILES = {
-    "Empfohlen": {"SEN": 900, "FF": 100, "FFS": 1, "FUL": 100, "FEI": 100, "FOR": 100, "SPR": 100, "DPR": 100,
+    t("Empfohlen", "Recommended"): {"SEN": 900, "FF": 100, "FFS": 1, "FUL": 100, "FEI": 100, "FOR": 100, "SPR": 100, "DPR": 100,
                   "NDP": 15, "NFR": 0, "NIN": 0, "INT": 1},
     "Rally": {"SEN": 540, "FF": 80, "FEI": 100, "FOR": 100, "SPR": 100, "DPR": 50,
               "NDP": 10, "NFR": 0, "NIN": 5, "INT": 2, "SHO": 100},
@@ -373,8 +406,10 @@ def fix_launcher_icon(path):
         pass
 
 
-PERM_HINT = ("Keine Schreibrechte auf die Tuning-Dateien. Einmalig ausführen: "
-             "sudo ~/.local/bin/fanatec-tuning --udev  – danach die Base aus- und wieder einschalten.")
+PERM_HINT = t("Keine Schreibrechte auf die Tuning-Dateien. Einmalig ausführen: "
+               "sudo ~/.local/bin/fanatec-tuning --udev  – danach die Base aus- und wieder einschalten.",
+               "No write permission on the tuning files. Run once: "
+               "sudo ~/.local/bin/fanatec-tuning --udev  – then switch the base off and on again.")
 
 LOCK = threading.RLock()
 
@@ -404,18 +439,18 @@ def read_all():
 
 def write_value(key, value):
     if key not in KEYS:
-        raise ValueError(f"Unbekannter Wert: {key}")
+        raise ValueError(t(f"Unbekannter Wert: {key}", f"Unknown value: {key}"))
     d = tuning_dir()
     if not d:
-        raise RuntimeError("Kein Fanatec-Wheel gefunden. Ist die Base an?")
+        raise RuntimeError(t("Kein Fanatec-Wheel gefunden. Ist die Base an?", "No Fanatec wheel found. Is the base on?"))
     try:
         with LOCK, open(os.path.join(d, key), "w") as f:
             f.write(f"{int(value)}\n")
     except PermissionError:
         raise RuntimeError(PERM_HINT)
     except OSError as e:
-        raise RuntimeError(f"{key} = {value} wurde abgelehnt ({e.strerror}). "
-                           "Wert außerhalb des erlaubten Bereichs?")
+        raise RuntimeError(f"{key} = {value} " + t(f"wurde abgelehnt ({e.strerror}). Wert außerhalb des erlaubten Bereichs?",
+                                                    f"was rejected ({e.strerror}). Value out of range?"))
 
 
 def is_writable():
@@ -459,7 +494,8 @@ def load_profiles():
         if not isinstance(profiles, dict):
             profiles = {}
         seeded = set(_read_json(SEEDED_FILE, []))
-        missing = [n for n in DEFAULT_PROFILES if n not in seeded]
+        same = {"Empfohlen", "Recommended"}   # one default profile, named per UI language
+        missing = [n for n in DEFAULT_PROFILES if n not in seeded and not (n in same and seeded & same)]
         if missing:
             for n in missing:
                 profiles.setdefault(n, DEFAULT_PROFILES[n])
@@ -489,7 +525,7 @@ def save_games(data):
         name = str(g.get("name", "")).strip()[:60]
         exe = str(g.get("exe", "")).strip()[:120]
         if not name or not exe:
-            raise ValueError("Jedes Spiel braucht einen Namen und eine .exe")
+            raise ValueError(t("Jedes Spiel braucht einen Namen und eine .exe", "Every game needs a name and an .exe"))
         profs = [str(p) for p in g.get("profiles", []) if str(p).strip()]
         games.append({"name": name, "exe": exe, "profiles": profs})
     with LOCK:
@@ -508,7 +544,7 @@ class Status:
 def apply_profile(name, reason=""):
     profiles = load_profiles()
     if name not in profiles:
-        raise ValueError(f"Profil '{name}' gibt es nicht")
+        raise ValueError(t(f"Profil '{name}' gibt es nicht", f"Profile '{name}' does not exist"))
     errors = []
     for key, value in profiles[name].items():
         if key in PROFILE_KEYS:
@@ -523,7 +559,7 @@ def apply_profile(name, reason=""):
     Status.message = " | ".join(errors)
     if reason:
         sen = profiles[name].get("SEN")
-        notify(f"Profil „{name}“", reason + (f" · {sen}°" if sen else ""))
+        notify(t(f"Profil „{name}“", f"Profile \"{name}\""), reason + (f" · {sen}°" if sen else ""))
     return errors
 
 
@@ -534,7 +570,7 @@ def next_profile():
     profiles = load_profiles()
     names = [p for p in (game["profiles"] if game else []) if p in profiles] or list(profiles)
     if not names:
-        raise ValueError("Keine Profile vorhanden")
+        raise ValueError(t("Keine Profile vorhanden", "No profiles available"))
     if Status.profile in names:
         idx = (names.index(Status.profile) + 1) % len(names)
     else:
@@ -592,9 +628,9 @@ def monitor():
                     profiles = load_profiles()
                     start = next((p for p in found["profiles"] if p in profiles), None)
                     if start and tuning_dir():
-                        apply_profile(start, reason=f"{name} erkannt")
+                        apply_profile(start, reason=t(f"{name} erkannt", f"{name} detected"))
                 elif games.get("after_exit") and tuning_dir():
-                    apply_profile(games["after_exit"], reason="Spiel beendet")
+                    apply_profile(games["after_exit"], reason=t("Spiel beendet", "game exited"))
         except Exception as e:  # der Wächter darf nie abstürzen
             Status.message = str(e)
         time.sleep(POLL_SECONDS)
@@ -608,7 +644,7 @@ def state():
         "writable": is_writable(),
         "values": read_all() or {},
         "params": [dict(zip(("key", "label", "desc", "min", "max", "step", "group", "type"), p),
-                        labels=TOGGLE_LABELS.get(p[0], ("aus", "an")))
+                        labels=TOGGLE_LABELS.get(p[0], OFF_ON))
                    for p in PARAMS],
         "profiles": load_profiles(),
         "games": load_games(),
@@ -631,7 +667,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if self.path in ("/", "/index.html"):
-            self._send(200, PAGE.encode(), "text/html; charset=utf-8")
+            self._send(200, PAGE_LOCAL.encode(), "text/html; charset=utf-8")
         elif self.path == "/api/state":
             self._send(200, state())
         elif self.path == "/api/running":
@@ -658,7 +694,7 @@ class Handler(BaseHTTPRequestHandler):
             elif self.path == "/api/profile/save":
                 name = str(body["name"]).strip()[:40]
                 if not name:
-                    raise ValueError("Bitte einen Namen angeben")
+                    raise ValueError(t("Bitte einen Namen angeben", "Please enter a name"))
                 values = read_all() or {}
                 profiles = load_profiles()
                 profiles[name] = {k: values[k] for k in PROFILE_KEYS if k in values}
@@ -887,6 +923,97 @@ $("#after").onchange=()=>{state.games.after_exit=$("#after").value;saveGames()};
 refresh(); setInterval(refresh,3000);
 </script></body></html>"""
 
+# Browser page in English on non-German systems: (German, English) pairs, longest first.
+PAGE_EN = [
+    ('<html lang="de">',
+     '<html lang="en">'),
+    ('⚠️ Keine Schreibrechte – Werte können nur angezeigt werden. Einmalig im Terminal <code>sudo ~/.local/bin/fanatec-tuning --udev</code> ausführen und die Base aus- und wieder einschalten.',
+     '⚠️ No write permission – values can only be shown. Run <code>sudo ~/.local/bin/fanatec-tuning --udev</code> once in a terminal and switch the base off and on again.'),
+    ('Beim Spielstart wird das mit ★ markierte Profil geladen. Mit dem Tastenkürzel für <code>fanatec-tuning --next</code> schaltest du im Spiel durch die Profile des Spiels.',
+     "The profile marked ★ is loaded when the game starts. A keyboard shortcut for <code>fanatec-tuning --next</code> cycles through the game's profiles in game."),
+    ('Änderungen werden sofort in den aktuellen Slot der Base geschrieben und dort gespeichert.',
+     "Changes are written to the base's current slot right away and stored there."),
+    ('Noch keine Profile – aktuelle Werte unten als Profil speichern.',
+     'No profiles yet – save the current values below as a profile.'),
+    ('"Profil „"+name+"“ gibt es schon. Mit den aktuellen Werten überschreiben?"',
+     '"Profile \\""+name+"\\" already exists. Overwrite with the current values?"'),
+    ('"Profil „"+name+"“ löschen? Es wird auch aus allen Spielen entfernt."',
+     '"Delete profile \\""+name+"\\"? It is also removed from all games."'),
+    ('"Kein Profil – beim Start wird nichts geändert."',
+     '"No profile – nothing is changed on start."'),
+    ('"<summary>Experte (nur ändern, wenn du weißt, was es tut)</summary>"',
+     '"<summary>Expert (only change if you know what it does)</summary>"'),
+    ('name==="Experte"',
+     'name==="Expert"'),
+    ('"Bitte Spielname und .exe eingeben"',
+     '"Please enter game name and .exe"'),
+    ('"Bitte einen Namen eingeben"',
+     '"Please enter a name"'),
+    ('"  ·  kein Profil zugeordnet"',
+     '"  ·  no profile assigned"'),
+    ('"  ·  Profil: "',
+     '"  ·  Profile: "'),
+    ('"Wird beim Spielstart geladen":"Als Startprofil festlegen"',
+     '"Loaded when the game starts":"Set as start profile"'),
+    ('"Aus diesem Spiel entfernen"',
+     '"Remove from this game"'),
+    ('Noch keine Spiele eingetragen.',
+     'No games added yet.'),
+    ('"Profil „"+n+"“ laden"',
+     '"load profile \\""+n+"\\""'),
+    ('"Profil „"+name+"“ gesetzt"',
+     '"Profile \\""+name+"\\" applied"'),
+    ('"Profil „"+name+"“ gelöscht"',
+     '"Profile \\""+name+"\\" deleted"'),
+    ('"Profil „"+name+"“ gespeichert"',
+     '"Profile \\""+name+"\\" saved"'),
+    ('confirm("„"+g.name+"“ entfernen?")',
+     'confirm("Remove \\""+g.name+"\\"?")'),
+    ('"+ Profil zuordnen…"',
+     '"+ Assign profile…"'),
+    ('"Wheel verbunden":"Kein Wheel gefunden"',
+     '"Wheel connected":"No wheel found"'),
+    ('"Tool nicht erreichbar"',
+     '"Tool not reachable"'),
+    ('placeholder="Name für aktuelle Werte"',
+     'placeholder="Name for current values"'),
+    ('>Als Profil speichern<',
+     '>Save as profile<'),
+    ('<h2>Spiele (automatisch)</h2>',
+     '<h2>Games (automatic)</h2>'),
+    ('placeholder="Spielname"',
+     'placeholder="Game name"'),
+    ('placeholder="z. B. acs.exe"',
+     'placeholder="e.g. acs.exe"'),
+    ('>Spiel hinzufügen<',
+     '>Add game<'),
+    ('>Nach Spielende:<',
+     '>After the game exits:<'),
+    ('<h2>Profile</h2>',
+     '<h2>Profiles</h2>'),
+    ('"Läuft gerade"',
+     '"Running now"'),
+    ('title:"Profil anwenden"',
+     'title:"Apply profile"'),
+    ('title:"Profil löschen"',
+     'title:"Delete profile"'),
+    ('text:"läuft"',
+     'text:"running"'),
+    ('text:"Entfernen"',
+     'text:"Remove"'),
+    ('text:"nichts ändern"',
+     'text:"change nothing"'),
+    ('"Gespeichert"',
+     '"Saved"'),
+    ('||"Fehler")',
+     '||"Error")'),
+]
+PAGE_LOCAL = PAGE
+if not DE:
+    for _de, _en in PAGE_EN:
+        assert _de in PAGE_LOCAL, _de   # catches page edits that break the translation
+        PAGE_LOCAL = PAGE_LOCAL.replace(_de, _en)
+
 
 # ------------------------------------------------------- Dienst & CLI -----
 
@@ -912,11 +1039,11 @@ def serve(open_browser):
         if open_browser:
             webbrowser.open(URL)
         return
-    print(f"Fanatec Tuning läuft auf {URL}  (Beenden mit Strg+C)")
+    print(t(f"Fanatec Tuning läuft auf {URL}  (Beenden mit Strg+C)", f"Fanatec Tuning running on {URL}  (quit with Ctrl+C)"))
     if not tuning_dir():
-        print("Hinweis: Kein Fanatec-Wheel gefunden – ist die Base eingeschaltet?")
+        print(t("Hinweis: Kein Fanatec-Wheel gefunden – ist die Base eingeschaltet?", "Note: no Fanatec wheel found – is the base switched on?"))
     elif not is_writable():
-        print("Hinweis: " + PERM_HINT)
+        print(t("Hinweis: ", "Note: ") + PERM_HINT)
     threading.Thread(target=monitor, daemon=True).start()
     if open_browser:
         threading.Timer(0.5, lambda: webbrowser.open(URL)).start()
@@ -932,8 +1059,8 @@ def cli_profile(action, name=None):
         if action == "next":
             res = post("/api/next")
         else:
-            res = post("/api/profile/apply", {"name": name, "reason": "per Tastenkürzel"})
-        print("Profil gesetzt:", res["running"]["profile"])
+            res = post("/api/profile/apply", {"name": name, "reason": t("per Tastenkürzel", "via shortcut")})
+        print(t("Profil gesetzt:", "Profile applied:"), res["running"]["profile"])
         return
     except urllib.error.HTTPError as e:
         sys.exit(json.load(e).get("error", str(e)))
@@ -941,10 +1068,10 @@ def cli_profile(action, name=None):
         pass
     # Dienst läuft nicht
     if action == "next":
-        sys.exit("Der Hintergrunddienst läuft nicht (fanatec-tuning --daemon).")
+        sys.exit(t("Der Hintergrunddienst läuft nicht (fanatec-tuning --daemon).", "The background service is not running (fanatec-tuning --daemon)."))
     try:
-        apply_profile(name, reason="per Befehl")
-        print("Profil gesetzt:", name)
+        apply_profile(name, reason=t("per Befehl", "via command"))
+        print(t("Profil gesetzt:", "Profile applied:"), name)
     except (ValueError, RuntimeError) as e:
         sys.exit(str(e))
 
@@ -1022,25 +1149,26 @@ def install(quiet=False):
         os.remove(OLD_ICON_PATH)
     exec_line = BIN_PATH
     write_desktop(DESKTOP_PATH, exec_line, "Fanatec Tuning",
-                  "Tuning-Menü der Fanatec-Wheelbase einstellen", "Categories=Game;Settings;\n")
-    write_desktop(AUTOSTART_PATH, f"{BIN_PATH} --daemon", "Fanatec Tuning (Hintergrund)",
-                  "Erkennt Spiele und lädt passende Wheel-Profile", "X-KDE-autostart-phase=2\n")
-    print(f"Installiert: {BIN_PATH}")
+                  t("Tuning-Menü der Fanatec-Wheelbase einstellen", "Adjust the tuning menu of the Fanatec wheel base"),
+                  "Categories=Game;Settings;\n")
+    write_desktop(AUTOSTART_PATH, f"{BIN_PATH} --daemon", t("Fanatec Tuning (Hintergrund)", "Fanatec Tuning (background)"),
+                  t("Erkennt Spiele und lädt passende Wheel-Profile", "Detects games and loads matching wheel profiles"), "X-KDE-autostart-phase=2\n")
+    print(t("Installiert:", "Installed:"), BIN_PATH)
     try:
         import PySide6  # noqa: F401
     except ImportError:
-        print("Für die Desktop-App fehlt noch PySide6:  sudo pacman -S pyside6")
-    print("Startmenü-Eintrag „Fanatec Tuning“ angelegt.")
-    print("Autostart eingerichtet – ab dem nächsten Login läuft die Spielerkennung automatisch.")
+        print(t("Für die Desktop-App fehlt noch PySide6:", "The desktop app still needs PySide6:") + "  sudo pacman -S pyside6")
+    print(t("Startmenü-Eintrag „Fanatec Tuning“ angelegt.", "Start menu entry \"Fanatec Tuning\" created."))
+    print(t("Autostart eingerichtet – ab dem nächsten Login läuft die Spielerkennung automatisch.", "Autostart set up – game detection runs automatically from the next login."))
     subprocess.Popen([sys.executable, BIN_PATH, "--daemon"], stdout=subprocess.DEVNULL,
                      stderr=subprocess.DEVNULL, start_new_session=True)
-    print("Hintergrunddienst gestartet.")
+    print(t("Hintergrunddienst gestartet.", "Background service started."))
     for tool in ("kbuildsycoca6", "kbuildsycoca5"):   # KDE-Menü sofort aktualisieren
         if which(tool):
             subprocess.Popen([tool], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             break
     if tuning_dir() and not is_writable():
-        print("\nNoch keine Schreibrechte. Einmalig ausführen:\n  sudo ~/.local/bin/fanatec-tuning --udev")
+        print(t("\nNoch keine Schreibrechte. Einmalig ausführen:", "\nNo write permission yet. Run once:") + "\n  sudo ~/.local/bin/fanatec-tuning --udev")
 
 
 def launch(args=()):
@@ -1051,8 +1179,8 @@ def launch(args=()):
         new = not os.path.exists(BIN_PATH)
         if new or installed_code() != source_code():
             install()
-            notify("Fanatec Tuning " + ("installiert" if new else "aktualisiert"),
-                   "Ab jetzt auch im Startmenü – die Spielerkennung läuft im Hintergrund.")
+            notify("Fanatec Tuning " + (t("installiert", "installed") if new else t("aktualisiert", "updated")),
+                   t("Ab jetzt auch im Startmenü – die Spielerkennung läuft im Hintergrund.", "Now also in the start menu – game detection runs in the background."))
     for launcher in launcher_copies(me):
         fix_launcher_icon(launcher)
     os.execv(sys.executable, [sys.executable, BIN_PATH] + [a for a in args if a != "--launch"])
@@ -1062,21 +1190,21 @@ def uninstall():
     for p in (BIN_PATH, DESKTOP_PATH, AUTOSTART_PATH, ICON_PATH):
         if os.path.exists(p):
             os.remove(p)
-            print(f"Entfernt: {p}")
+            print(t("Entfernt:", "Removed:"), p)
     subprocess.run(["pkill", "-f", "fanatec-tuning --daemon"], check=False)
-    print(f"Deine Profile und Spiele bleiben erhalten: {CFG_DIR}")
+    print(t("Deine Profile und Spiele bleiben erhalten:", "Your profiles and games are kept:"), CFG_DIR)
 
 
 def install_udev():
     if os.geteuid() != 0:
-        sys.exit("Bitte mit sudo ausführen, z. B.:  sudo ~/.local/bin/fanatec-tuning --udev")
+        sys.exit(t("Bitte mit sudo ausführen, z. B.:", "Please run with sudo, e.g.:") + "  sudo ~/.local/bin/fanatec-tuning --udev")
     os.makedirs(os.path.dirname(UDEV_PATH), exist_ok=True)
     with open(UDEV_PATH, "w") as f:
         f.write(UDEV_RULE)
     subprocess.run(["udevadm", "control", "--reload-rules"], check=False)
     subprocess.run(["udevadm", "trigger", "--subsystem-match=ftec_tuning", "--action=add"], check=False)
-    print(f"udev-Regel angelegt: {UDEV_PATH}")
-    print("Falls das Tool noch keine Rechte hat: Base einmal aus- und wieder einschalten.")
+    print(t("udev-Regel angelegt:", "udev rule created:"), UDEV_PATH)
+    print(t("Falls das Tool noch keine Rechte hat: Base einmal aus- und wieder einschalten.", "If the tool still has no permission: switch the base off and on once."))
 
 
 # ------------------------------------------------------ Einrichtung -----
@@ -1120,23 +1248,28 @@ def setup_issues():
         if helper:
             cmd = terminal_cmd(f"{helper} -S --needed hid-fanatecff-dkms && sudo modprobe hid-fanatec && "
                                f"echo hid-fanatec | sudo tee {MODLOAD_PATH} >/dev/null && "
-                               "echo && echo Fertig – Fenster kann geschlossen werden.")
-            issues.append(("Der Fanatec-Treiber (hid-fanatecff) ist nicht installiert.",
-                           "Treiber installieren", cmd))
+                               "echo && echo " + t("Fertig – Fenster kann geschlossen werden.", "Done – you can close this window."))
+            issues.append((t("Der Fanatec-Treiber (hid-fanatecff) ist nicht installiert.", "The Fanatec driver (hid-fanatecff) is not installed."),
+                           t("Treiber installieren", "Install driver"), cmd))
         else:
-            issues.append(("Der Fanatec-Treiber (hid-fanatecff) ist nicht installiert. Installiere das "
-                           "AUR-Paket hid-fanatecff-dkms (z. B. mit paru) oder siehe "
-                           "github.com/gotzl/hid-fanatecff.", None, None))
+            issues.append((t("Der Fanatec-Treiber (hid-fanatecff) ist nicht installiert. Installiere das "
+                             "AUR-Paket hid-fanatecff-dkms (z. B. mit paru) oder siehe github.com/gotzl/hid-fanatecff.",
+                             "The Fanatec driver (hid-fanatecff) is not installed. Install the AUR package "
+                             "hid-fanatecff-dkms (e.g. with paru) or see github.com/gotzl/hid-fanatecff."), None, None))
         return issues
     if not loaded or not os.path.exists(MODLOAD_PATH):
-        issues.append(("Der Fanatec-Treiber wird noch nicht automatisch geladen.", "Treiber aktivieren",
+        issues.append((t("Der Fanatec-Treiber wird noch nicht automatisch geladen.", "The Fanatec driver is not loaded automatically yet."),
+                       t("Treiber aktivieren", "Enable driver"),
                        ["pkexec", "sh", "-c", f"modprobe hid-fanatec; echo hid-fanatec > {MODLOAD_PATH}"]))
     if tuning_dir() is None:
         if loaded:
-            issues.append(("Kein Fanatec-Wheel gefunden – ist die Base eingeschaltet und per USB verbunden? "
-                           "Nach dem Aktivieren des Treibers die Base einmal aus- und einschalten.", None, None))
+            issues.append((t("Kein Fanatec-Wheel gefunden – ist die Base eingeschaltet und per USB verbunden? "
+                             "Nach dem Aktivieren des Treibers die Base einmal aus- und einschalten.",
+                             "No Fanatec wheel found – is the base switched on and connected via USB? "
+                             "After enabling the driver, switch the base off and on once."), None, None))
     elif not is_writable():
-        issues.append(("Noch keine Schreibrechte für das Tuning-Menü.", "Rechte einrichten",
+        issues.append((t("Noch keine Schreibrechte für das Tuning-Menü.", "No write permission for the tuning menu yet."),
+                       t("Rechte einrichten", "Set up permissions"),
                        ["pkexec", sys.executable, BIN_PATH, "--udev"]))
     return issues
 
@@ -1150,7 +1283,8 @@ def ensure_pyside6():
         pass
     if not (which("pacman") and which("pkexec")):
         return False
-    notify("Fanatec Tuning", "Installiere die Desktop-Oberfläche (PySide6) – bitte Passwort eingeben.")
+    notify("Fanatec Tuning", t("Installiere die Desktop-Oberfläche (PySide6) – bitte Passwort eingeben.",
+                                "Installing the desktop interface (PySide6) – please enter your password."))
     ok = subprocess.run(["pkexec", "pacman", "-S", "--needed", "--noconfirm", "pyside6"]).returncode == 0
     if ok:
         os.execv(sys.executable, [sys.executable] + sys.argv)   # neu starten, jetzt mit PySide6
@@ -1217,7 +1351,7 @@ def run_gui():
 
             # Profilleiste – immer sichtbar
             pbar = QtWidgets.QHBoxLayout()
-            pbar.addWidget(QtWidgets.QLabel("<b>Profil:</b>"))
+            pbar.addWidget(QtWidgets.QLabel(t("<b>Profil:</b>", "<b>Profile:</b>")))
             self.ptabs = QtWidgets.QTabBar()
             self.ptabs.setTabsClosable(True)
             self.ptabs.setExpanding(False)
@@ -1226,8 +1360,8 @@ def run_gui():
             self.ptabs.tabBarClicked.connect(self.on_profile_clicked)
             self.ptabs.tabCloseRequested.connect(self.on_profile_delete)
             pbar.addWidget(self.ptabs, 1)
-            save = QtWidgets.QPushButton(QtGui.QIcon.fromTheme("document-save"), "Speichern als…")
-            save.setToolTip("Aktuelle Werte als Profil speichern")
+            save = QtWidgets.QPushButton(QtGui.QIcon.fromTheme("document-save"), t("Speichern als…", "Save as…"))
+            save.setToolTip(t("Aktuelle Werte als Profil speichern", "Save current values as a profile"))
             save.clicked.connect(self.on_profile_save)
             pbar.addWidget(save)
             root.addLayout(pbar)
@@ -1239,7 +1373,7 @@ def run_gui():
 
             self.warn = QtWidgets.QLabel()   # (alt, bleibt unsichtbar)
             self.warn.hide()
-            self.setup_box = QtWidgets.QGroupBox("Einrichtung")
+            self.setup_box = QtWidgets.QGroupBox(t("Einrichtung", "Setup"))
             self.setup_box.setStyleSheet("QGroupBox{border:1px solid #f67400;border-radius:6px;"
                                          "margin-top:10px;padding-top:6px}"
                                          "QGroupBox::title{color:#f67400;left:8px}")
@@ -1252,7 +1386,7 @@ def run_gui():
             # Seiten
             self.pages = QtWidgets.QTabWidget()
             self.pages.addTab(self.build_tuning_page(), QtGui.QIcon.fromTheme("configure"), "Tuning")
-            self.pages.addTab(self.build_games_page(), QtGui.QIcon.fromTheme("applications-games"), "Spiele")
+            self.pages.addTab(self.build_games_page(), QtGui.QIcon.fromTheme("applications-games"), t("Spiele", "Games"))
             root.addWidget(self.pages, 1)
             self.setCentralWidget(central)
 
@@ -1274,7 +1408,7 @@ def run_gui():
                 self.statusBar().showMessage("⚠ " + msg, 8000)
                 return None
             except OSError:
-                self.statusBar().showMessage("⚠ Hintergrunddienst nicht erreichbar", 5000)
+                self.statusBar().showMessage(t("⚠ Hintergrunddienst nicht erreichbar", "⚠ Background service not reachable"), 5000)
                 return None
             if path != "/api/running" and isinstance(st, dict) and "values" in st:
                 self.apply_state(st)
@@ -1288,7 +1422,7 @@ def run_gui():
             try:
                 st = get_json("/api/state")
             except OSError:
-                self.status.setText("<span style='color:#da4453'>Dienst nicht erreichbar</span>")
+                self.status.setText("<span style='color:#da4453'>" + t("Dienst nicht erreichbar", "Service not reachable") + "</span>")
                 self.update_setup()
                 return
             self.apply_state(st)
@@ -1297,17 +1431,19 @@ def run_gui():
             self.state = st
             ok = st["connected"]
             self.status.setText("<span style='color:%s'>%s</span>" %
-                                (("#27ae60", "● Wheel verbunden") if ok else ("#da4453", "● Kein Wheel gefunden")))
+                                (("#27ae60", t("● Wheel verbunden", "● Wheel connected")) if ok else ("#da4453", t("● Kein Wheel gefunden", "● No wheel found"))))
             self.setup_tick -= 1
             if self.setup_tick <= 0:
                 self.setup_tick = 5
                 self.update_setup()
-            self.warn.setText("Keine Schreibrechte – Werte nur lesbar. Einmalig im Terminal: "
-                              "sudo ~/.local/bin/fanatec-tuning --udev  und die Base neu einschalten.")
+            self.warn.setText(t("Keine Schreibrechte – Werte nur lesbar. Einmalig im Terminal: ",
+                                "No write permission – values are read-only. Run once in a terminal: ")
+                              + "sudo ~/.local/bin/fanatec-tuning --udev  "
+                              + t("und die Base neu einschalten.", "and switch the base off and on."))
             run = st["running"]
             if run.get("game"):
-                self.running_label.setText(f"▶ {run['game']} läuft"
-                                           + (f"  ·  Profil: {run['profile']}" if run.get("profile") else ""))
+                self.running_label.setText(f"▶ {run['game']} " + t("läuft", "running")
+                                           + (t("  ·  Profil: ", "  ·  Profile: ") + run["profile"] if run.get("profile") else ""))
             self.running_label.setVisible(bool(run.get("game")))
             self.update_profiles(list(st["profiles"]), run.get("profile"))
             self.update_values(st["values"], st["writable"])
@@ -1320,7 +1456,7 @@ def run_gui():
             try:
                 issues = setup_issues()
             except Exception as e:  # Einrichtungs-Check darf die App nie blockieren
-                issues = [(f"Einrichtungs-Check fehlgeschlagen: {e}", None, None)]
+                issues = [(t("Einrichtungs-Check fehlgeschlagen: ", "Setup check failed: ") + str(e), None, None)]
             key = [(t, b) for t, b, _ in issues]
             if key == self.setup_key:
                 return
@@ -1350,7 +1486,7 @@ def run_gui():
             proc.finished.connect(lambda *_: (setattr(self, "setup_key", None), self.update_setup(),
                                               self.refresh()))
             proc.start(cmd[0], cmd[1:])
-            self.statusBar().showMessage("Einrichtung läuft … ggf. Passwort eingeben", 5000)
+            self.statusBar().showMessage(t("Einrichtung läuft … ggf. Passwort eingeben", "Setting up … enter your password if asked"), 5000)
 
         # ---------- Profile ----------
         def update_profiles(self, names, active):
@@ -1367,7 +1503,7 @@ def run_gui():
             for i, n in enumerate(names):
                 self.ptabs.setTabTextColor(i, QtGui.QColor("#3daee9") if n == active
                                            else pal.color(QtGui.QPalette.WindowText))
-                self.ptabs.setTabToolTip(i, "Aktives Profil" if n == active else "Klicken zum Anwenden")
+                self.ptabs.setTabToolTip(i, t("Aktives Profil", "Active profile") if n == active else t("Klicken zum Anwenden", "Click to apply"))
             if active in names:
                 self.ptabs.blockSignals(True)
                 self.ptabs.setCurrentIndex(names.index(active))
@@ -1380,19 +1516,21 @@ def run_gui():
 
         def on_profile_delete(self, i):
             n = self.profile_names[i]
-            if QtWidgets.QMessageBox.question(self, "Profil löschen",
-                                              f"Profil „{n}“ löschen?\nEs wird auch aus allen Spielen entfernt.") \
+            if QtWidgets.QMessageBox.question(self, t("Profil löschen", "Delete profile"),
+                                              t(f"Profil „{n}“ löschen?\nEs wird auch aus allen Spielen entfernt.",
+                                                f"Delete profile \"{n}\"?\nIt is also removed from all games.")) \
                     == QtWidgets.QMessageBox.Yes:
-                self.call("/api/profile/delete", {"name": n}, f"Profil „{n}“ gelöscht")
+                self.call("/api/profile/delete", {"name": n}, t(f"Profil „{n}“ gelöscht", f"Profile \"{n}\" deleted"))
 
         def on_profile_save(self):
-            name, ok = QtWidgets.QInputDialog.getText(self, "Profil speichern",
-                                                      "Name für die aktuellen Werte:")
+            name, ok = QtWidgets.QInputDialog.getText(self, t("Profil speichern", "Save profile"),
+                                                      t("Name für die aktuellen Werte:", "Name for the current values:"))
             name = name.strip()
             if not ok or not name:
                 return
             if name in self.profile_names and QtWidgets.QMessageBox.question(
-                    self, "Überschreiben?", f"Profil „{name}“ gibt es schon. Überschreiben?") \
+                    self, t("Überschreiben?", "Overwrite?"),
+                    t(f"Profil „{name}“ gibt es schon. Überschreiben?", f"Profile \"{name}\" already exists. Overwrite?")) \
                     != QtWidgets.QMessageBox.Yes:
                 return
             self.call("/api/profile/save", {"name": name}, f"Profil „{name}“ gespeichert")
@@ -1409,9 +1547,9 @@ def run_gui():
                     grid.setColumnStretch(1, 1)
                     grid.setColumnMinimumWidth(0, 230)
                     groups[group] = (box, grid)
-                    if group == "Experte":
+                    if group == G_EXPERT:
                         btn = QtWidgets.QToolButton()
-                        btn.setText("Experte (nur ändern, wenn du weißt, was es tut)")
+                        btn.setText(EXPERT_TITLE)
                         btn.setCheckable(True)
                         btn.setArrowType(Qt.RightArrow)
                         btn.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
@@ -1428,7 +1566,7 @@ def run_gui():
                 lbl.setWordWrap(True)
                 grid.addWidget(lbl, r, 0)
                 if typ == "toggle":
-                    off_l, on_l = TOGGLE_LABELS.get(key, ("aus", "an"))
+                    off_l, on_l = TOGGLE_LABELS.get(key, OFF_ON)
                     cb = QtWidgets.QCheckBox()
                     cb.toggled.connect(lambda on, k=key, c=cb, a=lo, b=hi, o=on_l, f_=off_l: (
                         c.setText(o if on else f_), self.send(k, b if on else a)))
@@ -1451,8 +1589,10 @@ def run_gui():
                         self.param_widgets[key] = ("number", spin, None)
                     grid.addWidget(spin, r, 2)
             lay.addStretch()
-            hint = QtWidgets.QLabel("<small style='color:gray'>Änderungen werden sofort in den aktuellen "
-                                    "Slot der Base geschrieben und dort gespeichert.</small>")
+            hint = QtWidgets.QLabel("<small style='color:gray'>" + t("Änderungen werden sofort in den aktuellen Slot der Base "
+                                                                  "geschrieben und dort gespeichert.",
+                                                                  "Changes are written to the base's current slot right away "
+                                                                  "and stored there.") + "</small>")
             lay.addWidget(hint)
             scroll = QtWidgets.QScrollArea()
             scroll.setWidgetResizable(True)
@@ -1514,54 +1654,56 @@ def run_gui():
             self.glist.currentRowChanged.connect(self.on_game_selected)
             left.addWidget(self.glist, 1)
             row = QtWidgets.QHBoxLayout()
-            b_new = QtWidgets.QPushButton(QtGui.QIcon.fromTheme("list-add"), "Neues Spiel")
+            b_new = QtWidgets.QPushButton(QtGui.QIcon.fromTheme("list-add"), t("Neues Spiel", "New game"))
             b_new.clicked.connect(self.on_game_new)
-            b_del = QtWidgets.QPushButton(QtGui.QIcon.fromTheme("list-remove"), "Entfernen")
+            b_del = QtWidgets.QPushButton(QtGui.QIcon.fromTheme("list-remove"), t("Entfernen", "Remove"))
             b_del.clicked.connect(self.on_game_delete)
             row.addWidget(b_new); row.addWidget(b_del)
             left.addLayout(row)
             split.addLayout(left, 2)
 
-            self.gform = QtWidgets.QGroupBox("Spiel")
+            self.gform = QtWidgets.QGroupBox(t("Spiel", "Game"))
             form = QtWidgets.QFormLayout(self.gform)
             self.g_name = QtWidgets.QLineEdit()
             self.g_name.editingFinished.connect(self.on_game_edited)
             form.addRow("Name:", self.g_name)
             exe_row = QtWidgets.QHBoxLayout()
             self.g_exe = QtWidgets.QLineEdit()
-            self.g_exe.setPlaceholderText("z. B. acs.exe")
+            self.g_exe.setPlaceholderText(t("z. B. acs.exe", "e.g. acs.exe"))
             self.g_exe.editingFinished.connect(self.on_game_edited)
             exe_row.addWidget(self.g_exe, 1)
-            pick = QtWidgets.QPushButton(QtGui.QIcon.fromTheme("view-process-all"), "Laufendes Programm…")
-            pick.setToolTip("Spiel starten, dann hier die .exe aus der Liste wählen")
+            pick = QtWidgets.QPushButton(QtGui.QIcon.fromTheme("view-process-all"), t("Laufendes Programm…", "Running program…"))
+            pick.setToolTip(t("Spiel starten, dann hier die .exe aus der Liste wählen", "Start the game, then pick its .exe from the list here"))
             pick.clicked.connect(self.on_pick_exe)
             exe_row.addWidget(pick)
-            form.addRow("Programm:", exe_row)
+            form.addRow(t("Programm:", "Program:"), exe_row)
 
             self.g_profiles = QtWidgets.QListWidget()
             self.g_profiles.setMaximumHeight(150)
-            form.addRow("Profile:", self.g_profiles)
+            form.addRow(t("Profile:", "Profiles:"), self.g_profiles)
             prow = QtWidgets.QHBoxLayout()
             self.g_add_combo = QtWidgets.QComboBox()
             prow.addWidget(self.g_add_combo, 1)
-            b_add = QtWidgets.QPushButton(QtGui.QIcon.fromTheme("list-add"), "Zuordnen")
+            b_add = QtWidgets.QPushButton(QtGui.QIcon.fromTheme("list-add"), t("Zuordnen", "Assign"))
             b_add.clicked.connect(self.on_game_profile_add)
-            b_star = QtWidgets.QPushButton("★ Startprofil")
+            b_star = QtWidgets.QPushButton(t("★ Startprofil", "★ Start profile"))
             b_star.clicked.connect(self.on_game_profile_star)
-            b_rem = QtWidgets.QPushButton(QtGui.QIcon.fromTheme("list-remove"), "Entfernen")
-            b_rem.setToolTip("Profil aus diesem Spiel entfernen")
+            b_rem = QtWidgets.QPushButton(QtGui.QIcon.fromTheme("list-remove"), t("Entfernen", "Remove"))
+            b_rem.setToolTip(t("Profil aus diesem Spiel entfernen", "Remove profile from this game"))
             b_rem.clicked.connect(self.on_game_profile_remove)
             prow.addWidget(b_add); prow.addWidget(b_star); prow.addWidget(b_rem)
             form.addRow("", prow)
-            info = QtWidgets.QLabel("<small style='color:gray'>Das Profil mit ★ wird beim Spielstart "
-                                    "geladen. Mit dem Tastenkürzel für <code>fanatec-tuning --next</code> "
-                                    "schaltest du im Spiel durch alle Profile dieses Spiels.</small>")
+            info = QtWidgets.QLabel("<small style='color:gray'>" + t(
+                "Das Profil mit ★ wird beim Spielstart geladen. Mit dem Tastenkürzel für "
+                "<code>fanatec-tuning --next</code> schaltest du im Spiel durch alle Profile dieses Spiels.",
+                "The profile with ★ is loaded when the game starts. A keyboard shortcut for "
+                "<code>fanatec-tuning --next</code> cycles through this game's profiles in game.") + "</small>")
             info.setWordWrap(True)
             form.addRow(info)
             split.addWidget(self.gform, 3)
 
             bottom = QtWidgets.QHBoxLayout()
-            bottom.addWidget(QtWidgets.QLabel("Nach Spielende:"))
+            bottom.addWidget(QtWidgets.QLabel(t("Nach Spielende:", "After the game exits:")))
             self.after_combo = QtWidgets.QComboBox()
             self.after_combo.activated.connect(self.on_after_changed)
             bottom.addWidget(self.after_combo)
@@ -1574,9 +1716,9 @@ def run_gui():
             self.g_add_combo.addItems(self.profile_names)
             cur = self.games.get("after_exit", "") if self.games else ""
             self.after_combo.clear()
-            self.after_combo.addItem("nichts ändern", "")
+            self.after_combo.addItem(t("nichts ändern", "change nothing"), "")
             for n in self.profile_names:
-                self.after_combo.addItem(f"Profil „{n}“ laden", n)
+                self.after_combo.addItem(t(f"Profil „{n}“ laden", f"load profile \"{n}\""), n)
             i = self.after_combo.findData(cur)
             self.after_combo.setCurrentIndex(max(i, 0))
 
@@ -1618,26 +1760,27 @@ def run_gui():
                 for i, p in enumerate(g["profiles"]):
                     self.g_profiles.addItem(("★ " if i == 0 else "    ") + p)
 
-        def save_games(self, msg="Gespeichert"):
+        def save_games(self, msg=t("Gespeichert", "Saved")):
             self.games_json = ""   # nächsten Stand neu übernehmen
             self.call("/api/games", self.games, msg)
 
         def on_game_new(self):
-            name, ok = QtWidgets.QInputDialog.getText(self, "Neues Spiel", "Name des Spiels:")
+            name, ok = QtWidgets.QInputDialog.getText(self, t("Neues Spiel", "New game"), t("Name des Spiels:", "Name of the game:"))
             if ok and name.strip():
-                self.games["games"].append({"name": name.strip(), "exe": "neues-spiel.exe", "profiles": []})
+                self.games["games"].append({"name": name.strip(), "exe": t("neues-spiel.exe", "new-game.exe"), "profiles": []})
                 self.game_row = len(self.games["games"]) - 1
-                self.save_games("Spiel angelegt – jetzt noch das Programm eintragen")
+                self.save_games(t("Spiel angelegt – jetzt noch das Programm eintragen", "Game added – now enter its program"))
                 self.pages.setCurrentIndex(1)
                 self.g_exe.setFocus(); self.g_exe.selectAll()
 
         def on_game_delete(self):
             g = self.current_game()
-            if g and QtWidgets.QMessageBox.question(self, "Spiel entfernen", f"„{g['name']}“ entfernen?") \
+            if g and QtWidgets.QMessageBox.question(self, t("Spiel entfernen", "Remove game"),
+                                                    t(f"„{g['name']}“ entfernen?", f"Remove \"{g['name']}\"?")) \
                     == QtWidgets.QMessageBox.Yes:
                 self.games["games"].pop(self.game_row)
                 self.game_row = max(0, self.game_row - 1)
-                self.save_games("Spiel entfernt")
+                self.save_games(t("Spiel entfernt", "Game removed"))
 
         def on_game_edited(self):
             g = self.current_game()
@@ -1654,11 +1797,11 @@ def run_gui():
             if exes is None:
                 return
             if not exes:
-                QtWidgets.QMessageBox.information(self, "Keine Spiele gefunden",
-                                                  "Es läuft gerade kein Windows-Programm.\n"
-                                                  "Starte das Spiel und versuche es dann nochmal.")
+                QtWidgets.QMessageBox.information(self, t("Keine Spiele gefunden", "No games found"),
+                                                  t("Es läuft gerade kein Windows-Programm.\nStarte das Spiel und versuche es dann nochmal.",
+                                                    "No Windows program is running right now.\nStart the game and try again."))
                 return
-            exe, ok = QtWidgets.QInputDialog.getItem(self, "Laufendes Programm", "Welches ist das Spiel?",
+            exe, ok = QtWidgets.QInputDialog.getItem(self, t("Laufendes Programm", "Running program"), t("Welches ist das Spiel?", "Which one is the game?"),
                                                      exes, 0, False)
             if ok and exe:
                 self.g_exe.setText(exe)
@@ -1668,26 +1811,26 @@ def run_gui():
             g, p = self.current_game(), self.g_add_combo.currentText()
             if g and p and p not in g["profiles"]:
                 g["profiles"].append(p)
-                self.save_games(f"„{p}“ zugeordnet")
+                self.save_games(t(f"„{p}“ zugeordnet", f"\"{p}\" assigned"))
 
         def selected_game_profile(self):
             g, row = self.current_game(), self.g_profiles.currentRow()
             if g and 0 <= row < len(g["profiles"]):
                 return g, row
-            self.statusBar().showMessage("Bitte zuerst ein Profil in der Liste auswählen", 3000)
+            self.statusBar().showMessage(t("Bitte zuerst ein Profil in der Liste auswählen", "Please select a profile in the list first"), 3000)
             return None, None
 
         def on_game_profile_star(self):
             g, row = self.selected_game_profile()
             if g and row > 0:
                 g["profiles"].insert(0, g["profiles"].pop(row))
-                self.save_games(f"„{g['profiles'][0]}“ ist jetzt das Startprofil")
+                self.save_games(t(f"„{g['profiles'][0]}“ ist jetzt das Startprofil", f"\"{g['profiles'][0]}\" is now the start profile"))
 
         def on_game_profile_remove(self):
             g, row = self.selected_game_profile()
             if g:
                 p = g["profiles"].pop(row)
-                self.save_games(f"„{p}“ entfernt")
+                self.save_games(t(f"„{p}“ entfernt", f"\"{p}\" removed"))
 
         def on_after_changed(self):
             if self.games is not None:
@@ -1717,15 +1860,15 @@ def run_gui():
             self.tray_state = key
             m = self.tray_menu
             m.clear()
-            m.addSection("Profil")
+            m.addSection(t("Profil", "Profile"))
             for n in self.profile_names:
                 a = m.addAction(n)
                 a.setCheckable(True); a.setChecked(n == active)
                 a.triggered.connect(lambda _=False, n=n: self.call("/api/profile/apply", {"name": n},
-                                                                   f"Profil „{n}“ gesetzt"))
+                                                                   t(f"Profil „{n}“ gesetzt", f"Profile \"{n}\" applied")))
             m.addSeparator()
-            m.addAction(QtGui.QIcon.fromTheme("window"), "Fenster anzeigen", self.show_window)
-            m.addAction(QtGui.QIcon.fromTheme("application-exit"), "Beenden", self.quit_app)
+            m.addAction(QtGui.QIcon.fromTheme("window"), t("Fenster anzeigen", "Show window"), self.show_window)
+            m.addAction(QtGui.QIcon.fromTheme("application-exit"), t("Beenden", "Quit"), self.quit_app)
             self.tray.setToolTip("Fanatec Tuning" + (f" – {active}" if active else ""))
 
         def toggle_window(self):
@@ -1747,15 +1890,17 @@ def run_gui():
                 self.hide()
                 if not self.tray_hint_shown:
                     self.tray_hint_shown = True
-                    self.tray.showMessage("Fanatec Tuning", "Läuft im Systemabschnitt weiter. "
-                                          "Rechtsklick aufs Symbol zum Profilwechsel oder Beenden.",
+                    self.tray.showMessage("Fanatec Tuning", t("Läuft im Systemabschnitt weiter. Rechtsklick aufs Symbol zum "
+                                                             "Profilwechsel oder Beenden.",
+                                                             "Keeps running in the system tray. Right-click the icon to "
+                                                             "switch profiles or quit."),
                                           self.app_icon, 4000)
             else:
                 ev.accept()
                 QtWidgets.QApplication.quit()
 
     if not ensure_daemon():
-        print("Hintergrunddienst konnte nicht gestartet werden.")
+        print(t("Hintergrunddienst konnte nicht gestartet werden.", "Background service could not be started."))
         return True
     app = QtWidgets.QApplication(sys.argv)
     app.setApplicationName("Fanatec Tuning")
@@ -1788,10 +1933,10 @@ def main():
     if "--apply" in args:
         i = args.index("--apply")
         if i + 1 >= len(args):
-            sys.exit("Bitte Profilnamen angeben: fanatec-tuning --apply NAME")
+            sys.exit(t("Bitte Profilnamen angeben:", "Please give a profile name:") + " fanatec-tuning --apply NAME")
         return cli_profile("apply", args[i + 1])
     if "-h" in args or "--help" in args:
-        return print(__doc__)
+        return print(__doc__ if DE else HELP_EN)
     if "--daemon" in args or "--no-browser" in args:
         return serve(open_browser=False)
     if os.path.realpath(sys.argv[0]) != os.path.realpath(BIN_PATH) and not os.environ.get("FTEC_NO_SELFINSTALL"):
@@ -1799,9 +1944,12 @@ def main():
     if "--web" not in args and ensure_pyside6() and run_gui():
         return
     if "--web" not in args:
-        print("Hinweis: Für die Desktop-App bitte PySide6 installieren:  sudo pacman -S pyside6\n"
-              "Öffne stattdessen die Browser-Version …")
-        notify("PySide6 fehlt", "Für die Desktop-App: sudo pacman -S pyside6 – öffne die Browser-Version.")
+        print(t("Hinweis: Für die Desktop-App bitte PySide6 installieren:  sudo pacman -S pyside6\n"
+                "Öffne stattdessen die Browser-Version …",
+                "Note: for the desktop app please install PySide6:  sudo pacman -S pyside6\n"
+                "Opening the browser version instead …"))
+        notify(t("PySide6 fehlt", "PySide6 missing"), t("Für die Desktop-App: sudo pacman -S pyside6 – öffne die Browser-Version.",
+                                                       "For the desktop app: sudo pacman -S pyside6 – opening the browser version."))
     # Browser-Version: läuft der Dienst schon, nur die Seite öffnen
     if daemon_running():
         webbrowser.open(URL)

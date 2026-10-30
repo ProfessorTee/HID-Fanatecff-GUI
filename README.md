@@ -6,7 +6,7 @@
 [hid-fanatecff](https://github.com/gotzl/hid-fanatecff). Steering angle, force feedback, damping, smoothing
 etc. can be set with sliders, plus profiles that are loaded automatically when a game starts.
 
-The interface is in German.
+The interface follows the system language: German on German systems, English otherwise.
 
 ## Features
 
