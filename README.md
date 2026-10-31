@@ -16,20 +16,23 @@ The interface follows the system language: German on German systems, English oth
 - **Automatic game detection:** a background service detects running games (also under Proton) by their
   `.exe` and applies the assigned profile. Optionally a different profile after the game exits.
 - **Switch profiles in game** with a keyboard shortcut bound to `fanatec-tuning --next`.
-- **Desktop app** with PySide6; without PySide6 it falls back to a **browser interface** (only on `127.0.0.1`).
+- **Tray icon** of the background service: switch profiles, open the window.
+- **A single program** (Rust, ~3 MB), no dependencies besides the driver. The window only runs while it is open.
 
 ## Installation
 
 **One click:** download `Fanatec-Tuning.desktop` and double-click it (on KDE you may have to "allow
-executing" first). The file contains the whole program, installs it to `~/.local/bin`, adds a start menu
-entry and autostart, and launches it. A newer launcher updates the installation on the next double-click.
+executing" first). The file downloads the current release from GitHub, installs it to `~/.local/bin`, adds
+a start menu entry and autostart, and launches it. Every further double-click fetches the newest version.
+Without internet it simply starts the installed version.
 
-**Or via terminal:**
+**Or from source** (needs `cargo`, Arch/CachyOS: `sudo pacman -S rust`):
 
 ```
 git clone https://github.com/ProfessorTee/HID-Fanatecff-GUI.git
 cd HID-Fanatecff-GUI
-./fanatec-tuning --install
+cargo build --release
+./target/release/fanatec-tuning --install
 ```
 
 **Write permissions (once):** so normal users may change the values, add a udev rule and then switch the
@@ -46,8 +49,7 @@ Remove: `fanatec-tuning --uninstall` (profiles in `~/.config/fanatec-tuning` are
 | Command | Effect |
 |---|---|
 | `fanatec-tuning` | open the desktop app |
-| `fanatec-tuning --web` | open the interface in the browser |
-| `fanatec-tuning --daemon` | only game detection in the background (autostart) |
+| `fanatec-tuning --daemon` | game detection + tray icon in the background (autostart) |
 | `fanatec-tuning --next` | next profile of the running game |
 | `fanatec-tuning --apply NAME` | apply profile NAME |
 | `fanatec-tuning --install` / `--uninstall` | install / remove |
@@ -57,13 +59,13 @@ Remove: `fanatec-tuning --uninstall` (profiles in `~/.config/fanatec-tuning` are
 
 - Linux with the driver [hid-fanatecff](https://github.com/gotzl/hid-fanatecff) (provides
   `/sys/class/ftec_tuning/`)
-- Python 3, plus PySide6 for the desktop app (Arch/CachyOS: `sudo pacman -S pyside6`)
 - Developed and tested with a Fanatec CSL DD (Boost Kit) on KDE Plasma 6 (CachyOS)
 
 ## Development
 
-The program is the single file `fanatec-tuning`. After changes, run `./make-desktop.sh` so the one-click
-launcher contains the new program.
+Rust program in `src/main.rs` (egui window with CPU rendering, ksni for the tray). A `v*` tag builds it via
+GitHub Actions on Ubuntu 22.04 (so it runs on glibc ≥ 2.35) and attaches it to the release that the
+one-click launcher downloads.
 
 ## License
 
