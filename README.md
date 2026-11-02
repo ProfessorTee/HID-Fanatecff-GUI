@@ -8,6 +8,11 @@ etc. can be set with sliders, plus profiles that are loaded automatically when a
 
 The interface follows the system language: German on German systems, English otherwise.
 
+<p align="center">
+  <img src="screenshots/en-tuning.png" alt="Tuning page" width="48%">
+  <img src="screenshots/en-games.png" alt="Games page with per-game profiles" width="48%">
+</p>
+
 ## Features
 
 - **All tuning values** of the base (SEN, FF, FFS, FUL, FEI, FOR, SPR, DPR, SHO, NDP, NFR, NIN, INT, slot, …)
