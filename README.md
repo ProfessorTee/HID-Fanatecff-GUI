@@ -8,10 +8,8 @@ etc. can be set with sliders, plus profiles that are loaded automatically when a
 
 The interface follows the system language: German on German systems, English otherwise.
 
-<p align="center">
-  <img src="screenshots/en-tuning.png" alt="Tuning page" width="48%">
-  <img src="screenshots/en-games.png" alt="Games page with per-game profiles" width="48%">
-</p>
+<p align="center"><img src="screenshots/en-tuning.png" alt="Tuning page"></p>
+<p align="center"><img src="screenshots/en-games.png" alt="Games page with per-game profiles"></p>
 
 ## Features
 

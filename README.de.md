@@ -9,10 +9,8 @@ eines Spiels automatisch geladen werden.
 
 Die Oberfläche folgt der Systemsprache: Deutsch auf deutschen Systemen, sonst Englisch.
 
-<p align="center">
-  <img src="screenshots/de-tuning.png" alt="Tuning-Seite" width="48%">
-  <img src="screenshots/de-games.png" alt="Spiele-Seite mit Profilen pro Spiel" width="48%">
-</p>
+<p align="center"><img src="screenshots/de-tuning.png" alt="Tuning-Seite"></p>
+<p align="center"><img src="screenshots/de-games.png" alt="Spiele-Seite mit Profilen pro Spiel"></p>
 
 ## Funktionen
 
